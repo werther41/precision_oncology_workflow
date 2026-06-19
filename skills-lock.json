@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "tooluniverse-precision-oncology": {
+      "source": "mims-harvard/tooluniverse",
+      "sourceType": "github",
+      "skillPath": "skills/tooluniverse-precision-oncology/SKILL.md",
+      "computedHash": "fc9b10a0cf391db87ea5d0642b953df959afca31cba9b6bff4c9f8e63f424f54"
+    }
+  }
+}
