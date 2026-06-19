@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(nvidia-smi *)",
+      "Read(//mnt/storage/parabricks_test/**)",
+      "Bash(bash *)",
+      "Bash(pip3 install *)",
+      "Bash(python3 -c \"import pandas, requests; print\\('OK'\\)\")",
+      "Bash(pbrun prepon *)",
+      "Bash(docker run *)"
+    ]
+  }
+}
