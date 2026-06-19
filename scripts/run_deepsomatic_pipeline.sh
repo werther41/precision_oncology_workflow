@@ -3,10 +3,12 @@
 # DeepSomatic GPU somatic variant calling pipeline
 # Reuses existing aligned BAMs — do NOT re-run fq2bam.
 #
-# Phases 0-2:
+# Phases 0-4:
 #   0. Preflight: BAM/index presence, SM-tag distinctness, GPU check
 #   1. pbrun deepsomatic call (GPU-accelerated)
 #   2. PASS extraction + INDEL-only split; sample-column auto-detection
+#   3. VEP REST + OncoKB annotation → MAF
+#   4. AMP/ASCO/CAP-tiered clinical report (text + JSON)
 #
 # Usage:
 #   ./run_deepsomatic_pipeline.sh <sample_id> <tumor_bam> <normal_bam>
@@ -20,20 +22,28 @@
 #                        WGS → --mode shortread (default model)
 #                        WES → --mode shortread --use-wes-model
 #                        pacbio/ont → --mode pacbio / --mode ont
+#   TUMOR_TYPE=LUAD      OncoTree tumor type code for VEP/OncoKB annotation (default LUAD)
+#   META_JSON=/path.json patient metadata JSON for report header (optional)
+#   WORKERS=5            concurrent VEP REST workers (default 5)
+#                        ONCOKB_TOKEN env var enables live OncoKB REST; fallback: built-in hotspot DB
 #
 # Flags:
 #   --preflight-only     run Phase 0 only, then exit
+#   --skip-annot         run Phases 0-2 only (skip VEP annotation + clinical report)
 
 set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ============================================================
 # PARSE ARGUMENTS
 # ============================================================
 PREFLIGHT_ONLY=false
+SKIP_ANNOT=false
 POSITIONAL=()
 for arg in "$@"; do
   case "$arg" in
     --preflight-only) PREFLIGHT_ONLY=true ;;
+    --skip-annot)     SKIP_ANNOT=true ;;
     *) POSITIONAL+=("$arg") ;;
   esac
 done
@@ -46,6 +56,9 @@ NORMAL_BAM="${3:-}"
 NUM_GPUS="${NUM_GPUS:-2}"
 GPU_DEVICE="${GPU_DEVICE:-all}"
 MODEL_TYPE="${MODEL_TYPE:-WGS}"
+TUMOR_TYPE="${TUMOR_TYPE:-LUAD}"
+META_JSON="${META_JSON:-}"
+WORKERS="${WORKERS:-5}"
 
 REF_DIR="${REF_DIR:-/mnt/storage/parabricks_test/ref}"
 REF_FASTA="${REF_DIR}/Homo_sapiens_assembly38.fasta"
@@ -239,4 +252,76 @@ PASS_COUNT=$(${BCFTOOLS_RUN} view -f PASS "${DS_VCF}" | grep -v "^#" | wc -l)
 echo ""
 echo "  PASS variants: ${PASS_COUNT}"
 echo ""
-echo "[$(date +%H:%M:%S)] Phases 0-2 complete. Run eval_deepsomatic.sh to benchmark."
+echo "[$(date +%H:%M:%S)] Phases 0-2 complete."
+
+if [[ "${SKIP_ANNOT}" == true ]]; then
+  echo "Skipping annotation phases (--skip-annot)."
+  echo "Run eval_deepsomatic.sh ${SAMPLE} to benchmark calls against truth."
+  exit 0
+fi
+
+# ============================================================
+# PHASE 3: Annotation (VEP REST + OncoKB / built-in hotspot DB)
+# ============================================================
+# DeepSomatic already suppressed FPs via its learned FILTER column.
+# VEP/OncoKB here provide interpretation only: functional consequence,
+# gnomAD AF, ClinVar significance, and actionability tiers.
+echo "========================================================"
+echo "[$(date +%H:%M:%S)] PHASE 3: VEP annotation + OncoKB tiering"
+echo "========================================================"
+
+DS_MAF="${DS_OUTDIR}/${SAMPLE}.deepsomatic.maf"
+if [[ -f "${DS_MAF}" ]]; then
+  echo "[$(date +%H:%M:%S)] Skipping annotation — exists: ${DS_MAF}"
+else
+  echo "  Input VCF:    ${DS_PASS}"
+  echo "  Tumor sample: ${TUMOR_SAMPLE}"
+  echo "  Tumor type:   ${TUMOR_TYPE}"
+  echo "  VEP workers:  ${WORKERS}"
+  if [[ -n "${ONCOKB_TOKEN:-}" ]]; then
+    echo "  OncoKB:       token set (live REST annotation)"
+  else
+    echo "  OncoKB:       no token — built-in hotspot fallback (set ONCOKB_TOKEN for live annotation)"
+  fi
+  echo ""
+  python3 "${SCRIPT_DIR}/vcf_to_maf_vep_rest.py" \
+    --vcf "${DS_PASS}" \
+    --tumor-id "${TUMOR_SAMPLE}" \
+    --tumor-type "${TUMOR_TYPE}" \
+    --workers "${WORKERS}" \
+    --out "${DS_MAF}"
+  echo "[$(date +%H:%M:%S)] MAF written: ${DS_MAF}"
+fi
+
+# ============================================================
+# PHASE 4: Clinical report (AMP/ASCO/CAP tiers)
+# ============================================================
+echo "========================================================"
+echo "[$(date +%H:%M:%S)] PHASE 4: AMP-tiered clinical report"
+echo "========================================================"
+
+DS_REPORT="${DS_OUTDIR}/${SAMPLE}.deepsomatic_clinical_report.txt"
+if [[ -f "${DS_REPORT}" ]]; then
+  echo "[$(date +%H:%M:%S)] Skipping report — exists: ${DS_REPORT}"
+else
+  META_ARGS=()
+  if [[ -n "${META_JSON:-}" && -f "${META_JSON}" ]]; then
+    META_ARGS+=(--meta-json "${META_JSON}")
+  fi
+  python3 "${SCRIPT_DIR}/generate_clinical_report.py" \
+    --maf "${DS_MAF}" \
+    --sample-id "${SAMPLE}" \
+    --tumor-type "${TUMOR_TYPE}" \
+    "${META_ARGS[@]}" \
+    --caller "Parabricks 4.7 (GPU) -> DeepSomatic -> VEP REST -> OncoKB" \
+    --out "${DS_REPORT}"
+fi
+
+echo ""
+echo "[$(date +%H:%M:%S)] All phases complete."
+echo "  MAF:    ${DS_MAF}"
+echo "  Report: ${DS_REPORT}"
+echo "  JSON:   ${DS_REPORT%.txt}.json"
+echo ""
+echo "Benchmark: run eval_deepsomatic.sh ${SAMPLE} to compare calls against SEQC2 truth."
+echo "PCGR:      run run_pcgr.sh ${SAMPLE} for a deterministic second-opinion report."

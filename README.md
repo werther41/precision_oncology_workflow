@@ -160,15 +160,35 @@ subtraction and emits `FILTER=GERMLINE` for non-somatic variants; only `FILTER=P
 somatic. Requires BAMs already produced by Step 3 (fq2bam).
 
 ```bash
-# Phase 1–2: call + extract PASS-only VCF (skip-if-exists safe)
+# Phases 1–4: call → PASS extract → VEP/OncoKB annotation → AMP-tiered report
+# All phases have skip-if-exists guards — safe to re-run from any stage.
+# DeepSomatic's FILTER column already suppresses FPs; VEP/OncoKB add interpretation only.
+TUMOR_TYPE=BRCA \
 ./scripts/run_deepsomatic_pipeline.sh HCC1395 \
   /mnt/storage/parabricks_test/output/HCC1395/HCC1395_tumor.bam \
   /mnt/storage/parabricks_test/output/HCC1395/HCC1395_normal.bam
+# Writes (in deepsomatic/ subdir):
+#   HCC1395.deepsomatic.pass.vcf.gz            PASS-only somatic VCF
+#   HCC1395.deepsomatic.maf                    VEP + OncoKB annotated MAF
+#   HCC1395.deepsomatic_clinical_report.txt    AMP-tiered text report
+#   HCC1395.deepsomatic_clinical_report.json   EHR-ready JSON
 
-# Phase 3: benchmark against SEQC2 truth with HC regions BED
+# Add --skip-annot to run Phases 0-2 only (calling + PASS extract, no annotation).
+# Set ONCOKB_TOKEN env var to use live OncoKB REST instead of built-in hotspot fallback.
+
+# Benchmark against SEQC2 truth (separate step — HC BED is mandatory)
 # HC BED required — omitting it inflates FPs by ~93% (chrX + chr6 MHC + chr16 repeats)
 ./scripts/eval_deepsomatic.sh HCC1395
 # Writes: /mnt/storage/parabricks_test/output/HCC1395/deepsomatic/eval/comparison.md
+
+# Optional: PCGR second-opinion report (deterministic, CIViC/ClinVar/OncoKB bundle)
+# Requires one-time data bundle download (~5 GB) and VEP cache (~30 GB) — see script header.
+PCGR_BUNDLE=/mnt/storage/pcgr_bundle \
+VEP_CACHE=/mnt/storage/vep_cache \
+TUMOR_TYPE=BRCA \
+./scripts/run_pcgr.sh HCC1395
+# Writes: deepsomatic/pcgr/HCC1395.pcgr.grch38.html  (HTML report)
+#         deepsomatic/pcgr/HCC1395.pcgr.grch38.snvs_indels.tiers.tsv  (tier TSV for diffing)
 ```
 
 > **⚠️ HC regions BED is mandatory for SEQC2 truth evaluation.** The truth VCF covers only

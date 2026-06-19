@@ -7,7 +7,13 @@
       "Bash(pip3 install *)",
       "Bash(python3 -c \"import pandas, requests; print\\('OK'\\)\")",
       "Bash(pbrun prepon *)",
-      "Bash(docker run *)"
+      "Bash(docker run *)",
+      "WebFetch(domain:sigven.github.io)",
+      "Bash(python3 *)",
+      "Bash(mkdir -p /mnt/storage/parabricks_test/output/HCC1395/deepsomatic/treatment_report)",
+      "Bash(cat)",
+      "WebSearch",
+      "mcp__claude_ai_PubMed__search_articles"
     ]
   }
 }

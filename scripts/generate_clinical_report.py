@@ -74,8 +74,12 @@ def filter_clinically_relevant(df: pd.DataFrame, min_alt_reads: int = 5) -> pd.D
     return df[keep].copy()
 
 
+DEFAULT_CALLER = "Parabricks 4.7 (GPU) -> Mutect2 -> VEP REST -> OncoKB"
+
+
 def generate_report(maf_path: str, sample_id: str, tumor_type: str,
-                    patient_meta: dict, out_path: str, min_alt_reads: int = 5):
+                    patient_meta: dict, out_path: str, min_alt_reads: int = 5,
+                    caller: str = DEFAULT_CALLER):
     df = load_maf(maf_path)
     df = filter_clinically_relevant(df, min_alt_reads=min_alt_reads)
     df["Tier"] = df.apply(tier_variant, axis=1)
@@ -91,7 +95,7 @@ def generate_report(maf_path: str, sample_id: str, tumor_type: str,
     lines.append(f"Tumor type:        {tumor_type}")
     lines.append(f"Specimen:          {patient_meta.get('specimen', 'FFPE tumor + matched blood')}")
     lines.append(f"Report date:       {datetime.now().strftime('%Y-%m-%d')}")
-    lines.append(f"Pipeline:          Parabricks 4.7 (GPU) -> Mutect2 -> VEP REST -> OncoKB")
+    lines.append(f"Pipeline:          {caller}")
     lines.append(f"Reference:         GRCh38 (Homo_sapiens_assembly38)")
     lines.append("")
 
@@ -172,6 +176,8 @@ if __name__ == "__main__":
     ap.add_argument("--meta-json", help="Patient metadata JSON file")
     ap.add_argument("--min-alt-reads", type=int, default=5,
                     help="Minimum alt read depth to report a variant (default 5; use 2 for low-depth amplicon smoke tests)")
+    ap.add_argument("--caller", default=DEFAULT_CALLER,
+                    help="Pipeline description string shown in report header")
     args = ap.parse_args()
 
     meta = {}
@@ -179,4 +185,4 @@ if __name__ == "__main__":
         meta = json.loads(Path(args.meta_json).read_text())
 
     generate_report(args.maf, args.sample_id, args.tumor_type, meta, args.out,
-                    min_alt_reads=args.min_alt_reads)
+                    min_alt_reads=args.min_alt_reads, caller=args.caller)
