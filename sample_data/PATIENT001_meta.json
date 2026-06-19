@@ -1,0 +1,9 @@
+{
+  "patient_id": "PATIENT001",
+  "specimen": "FFPE tumor (lung lobectomy) + matched peripheral blood",
+  "tumor_cov": 285,
+  "normal_cov": 64,
+  "purity": "0.72 (estimated by FACETS)",
+  "tmb": "8.4",
+  "msi": "MSS (stable)"
+}

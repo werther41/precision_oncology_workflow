@@ -1,0 +1,63 @@
+========================================================================
+PRECISION ONCOLOGY MOLECULAR PROFILING REPORT
+========================================================================
+Patient ID:        PATIENT001
+Sample ID:         PATIENT001
+Tumor type:        LUAD
+Specimen:          FFPE tumor (lung lobectomy) + matched peripheral blood
+Report date:       2026-05-28
+Pipeline:          Parabricks 4.3 -> Mutect2 -> VEP -> OncoKB
+Reference:         GRCh38 (Homo_sapiens_assembly38)
+
+------------------------------------------------------------------------
+QC SUMMARY
+------------------------------------------------------------------------
+  Tumor mean coverage:   285x
+  Normal mean coverage:  64x
+  Tumor purity (est.):   0.72 (estimated by FACETS)
+  TMB (mut/Mb):          8.4
+  MSI status:            MSS (stable)
+
+------------------------------------------------------------------------
+ACTIONABLE VARIANTS  (n=4)
+------------------------------------------------------------------------
+
+  [Tier IA] EGFR p.L858R
+      Consequence:   missense_variant
+      VAF:           63.4%  (depth: 123)
+      Position:      chr7:55191822 T>G
+      OncoKB level:  LEVEL_1
+      Therapy:       Osimertinib, Erlotinib, Gefitinib, Afatinib (FDA-approved)
+
+  [Tier IA] KRAS p.G12C
+      Consequence:   missense_variant
+      VAF:           11.8%  (depth: 68)
+      Position:      chr12:25245350 C>A
+      OncoKB level:  LEVEL_1
+      Therapy:       Sotorasib, Adagrasib (FDA-approved for KRAS G12C NSCLC)
+
+  [Tier IIC] TP53 p.R248Q
+      Consequence:   missense_variant
+      VAF:           64.7%  (depth: 85)
+      Position:      chr17:7674220 C>T
+      OncoKB level:  LEVEL_3B
+      Therapy:       APR-246 (clinical trials)
+
+  [Tier IID] STK11 p.W239*
+      Consequence:   stop_gained
+      VAF:           51.2%  (depth: 82)
+      Position:      chr19:1207021 G>A
+      OncoKB level:  LEVEL_4
+      Therapy:       Associated with reduced response to immunotherapy
+
+------------------------------------------------------------------------
+VARIANTS OF UNKNOWN SIGNIFICANCE  (n=2)
+------------------------------------------------------------------------
+  PIK3CA     p.R412P              VAF=28.6%  missense_variant
+  KEAP1      p.G364C              VAF=26.5%  missense_variant
+
+========================================================================
+DISCLAIMER: This report is intended for use by qualified medical
+professionals. Variant interpretation should be performed in the
+context of clinical presentation and additional testing.
+========================================================================

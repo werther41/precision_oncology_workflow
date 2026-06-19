@@ -1,0 +1,8 @@
+Hugo_Symbol	Chromosome	Start_Position	Reference_Allele	Tumor_Seq_Allele2	Variant_Classification	Consequence	HGVSp_Short	t_ref_count	t_alt_count	n_ref_count	n_alt_count	gnomAD_AF	CLIN_SIG	HIGHEST_LEVEL	HIGHEST_LEVEL_SUMMARY
+EGFR	chr7	55191822	T	G	Missense_Mutation	missense_variant	p.L858R	45	78	120	0	0.0	pathogenic	LEVEL_1	Osimertinib, Erlotinib, Gefitinib, Afatinib (FDA-approved)
+TP53	chr17	7674220	C	T	Missense_Mutation	missense_variant	p.R248Q	30	55	110	0	0.0	pathogenic	LEVEL_3B	APR-246 (clinical trials)
+KRAS	chr12	25245350	C	A	Missense_Mutation	missense_variant	p.G12C	60	8	130	0	0.0	pathogenic	LEVEL_1	Sotorasib, Adagrasib (FDA-approved for KRAS G12C NSCLC)
+STK11	chr19	1207021	G	A	Nonsense_Mutation	stop_gained	p.W239*	40	42	115	0	0.0	pathogenic	LEVEL_4	Associated with reduced response to immunotherapy
+PIK3CA	chr3	179234297	G	C	Missense_Mutation	missense_variant	p.R412P	55	22	125	0	0.0	uncertain_significance		
+KEAP1	chr19	10491676	G	T	Missense_Mutation	missense_variant	p.G364C	50	18	118	0	0.0	uncertain_significance		
+MUC16	chr19	8959520	C	T	Missense_Mutation	missense_variant	p.S5824L	38	35	60	55	0.18	benign		
