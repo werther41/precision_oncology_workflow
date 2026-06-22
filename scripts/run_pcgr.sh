@@ -202,7 +202,8 @@ else
       --tumor_af_tag "TVAF" \
       --tumor_purity "${TUMOR_PURITY}" \
       --estimate_tmb \
-      --estimate_msi
+      --estimate_msi \
+      --force_overwrite
 
   echo "[$(date +%H:%M:%S)] PCGR complete."
 fi
