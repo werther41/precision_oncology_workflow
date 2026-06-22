@@ -28,11 +28,11 @@ set -euo pipefail
 # ============================================================
 # CONFIG
 # ============================================================
-SAMPLE_ID="${1:-PATIENT001}"
-TUMOR_R1="${2:-sample_data/tumor_R1.fastq.gz}"
-TUMOR_R2="${3:-sample_data/tumor_R2.fastq.gz}"
-NORMAL_R1="${4:-sample_data/normal_R1.fastq.gz}"
-NORMAL_R2="${5:-sample_data/normal_R2.fastq.gz}"
+SAMPLE_ID="${1:-${SAMPLE_ID:-PATIENT001}}"
+TUMOR_R1="${TUMOR_R1:-${2:-sample_data/tumor_R1.fastq.gz}}"
+TUMOR_R2="${TUMOR_R2:-${3:-sample_data/tumor_R2.fastq.gz}}"
+NORMAL_R1="${NORMAL_R1:-${4:-sample_data/normal_R1.fastq.gz}}"
+NORMAL_R2="${NORMAL_R2:-${5:-sample_data/normal_R2.fastq.gz}}"
 
 NUM_GPUS="${NUM_GPUS:-1}"
 GPU_DEVICE="${GPU_DEVICE:-0}"      # use "0,1" for 2-GPU runs

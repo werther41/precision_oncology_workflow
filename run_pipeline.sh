@@ -246,9 +246,9 @@ PCGR_HTML="${DS_OUTDIR}/pcgr/${SAMPLE}.pcgr.grch38.html"
 # AUTO-DETECT START STAGE
 # ============================================================
 if [[ -z "${START_FROM}" ]]; then
-  if   [[ -n "${INPUT_VCF}" ]];                          then START_FROM="opencravat"
+  if   [[ -n "${INPUT_VCF}" ]];                            then START_FROM="opencravat"
+  elif [[ -n "${TUMOR_R1}" ]];                             then START_FROM="fq2bam"
   elif [[ -n "${TUMOR_BAM_ARG:-}" || -f "${TUMOR_BAM}" ]]; then START_FROM="deepsomatic"
-  elif [[ -n "${TUMOR_R1}" ]];                           then START_FROM="fq2bam"
   else
     err "Cannot determine start stage. Provide --tumor-r1/r2 (FASTQs), --tumor-bam (BAMs), or --vcf."
   fi
