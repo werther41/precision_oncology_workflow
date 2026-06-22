@@ -145,19 +145,44 @@ if [[ -f "${PCGR_HTML}" ]]; then
   echo "[$(date +%H:%M:%S)] Skipping PCGR — output exists: ${PCGR_HTML}"
 else
   mkdir -p "${PCGR_OUTDIR}"
-  INPUT_DIR="$(cd "$(dirname "${INPUT_VCF}")" && pwd)"
-  INPUT_BASENAME="$(basename "${INPUT_VCF}")"
+
+  # PCGR v2.2.5 requires depth/AF as VCF INFO fields (not FORMAT).
+  # DeepSomatic stores these in FORMAT/DP and FORMAT/VAF, so we lift
+  # them into INFO/TDP and INFO/TVAF using bcftools/bgzip inside the PCGR
+  # container (those tools are not assumed to be on the host).
+  PREP_VCF="${PCGR_OUTDIR}/${SAMPLE}.pcgr_input.vcf.gz"
+  PREP_AWK="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/vcf_add_info_dp_vaf.awk"
+  INPUT_ABS="$(cd "$(dirname "${INPUT_VCF}")" && pwd)/$(basename "${INPUT_VCF}")"
+  INPUT_SRC_DIR="${INPUT_ABS%/*}"
+  INPUT_SRC_BASE="$(basename "${INPUT_ABS}")"
+  PREP_BASE="$(basename "${PREP_VCF}")"
+
+  if [[ ! -f "${PREP_VCF}" ]]; then
+    echo "  Preprocessing VCF: lifting FORMAT/DP → INFO/TDP, FORMAT/VAF → INFO/TVAF..."
+    docker container run --rm \
+      -v "${INPUT_SRC_DIR}":/mnt/src_vcf:ro \
+      -v "${PCGR_OUTDIR}":/mnt/output \
+      -v "${PREP_AWK}":/mnt/scripts/vcf_add_info_dp_vaf.awk:ro \
+      "sigven/pcgr:${PCGR_VERSION}" \
+      bash -c "set -euo pipefail && \
+        bcftools view /mnt/src_vcf/${INPUT_SRC_BASE} \
+          | awk -f /mnt/scripts/vcf_add_info_dp_vaf.awk \
+          | bgzip > /mnt/output/${PREP_BASE} && \
+        bcftools index -t /mnt/output/${PREP_BASE}"
+    echo "  Preprocessed VCF: ${PREP_VCF}"
+  fi
+
+  INPUT_DIR="${PCGR_OUTDIR}"
+  INPUT_BASENAME="${PREP_BASE}"
 
   echo "  Sample:       ${SAMPLE}"
-  echo "  Input VCF:    ${INPUT_VCF}"
+  echo "  Input VCF:    ${PREP_VCF}"
   echo "  Tumor type:   ${TUMOR_TYPE} → PCGR site ${PCGR_SITE}"
   echo "  Assay:        ${PCGR_ASSAY}"
   echo "  Tumor purity: ${TUMOR_PURITY}"
   echo "  PCGR image:   sigven/pcgr:${PCGR_VERSION}"
   echo ""
 
-  # DeepSomatic FORMAT fields: DP = total depth, VAF = variant allele frequency.
-  # For Mutect2 VCFs substitute: --tumor_dp_tag DP --tumor_af_tag AF
   docker container run --rm \
     -v "${VEP_CACHE}":/mnt/.vep \
     -v "${PCGR_BUNDLE}":/mnt/bundle \
@@ -173,8 +198,8 @@ else
       --sample_id "${SAMPLE}" \
       --tumor_site "${PCGR_SITE}" \
       --assay "${PCGR_ASSAY}" \
-      --tumor_dp_tag "DP" \
-      --tumor_af_tag "VAF" \
+      --tumor_dp_tag "TDP" \
+      --tumor_af_tag "TVAF" \
       --tumor_purity "${TUMOR_PURITY}" \
       --estimate_tmb \
       --estimate_msi

@@ -13,7 +13,9 @@
       "Bash(mkdir -p /mnt/storage/parabricks_test/output/HCC1395/deepsomatic/treatment_report)",
       "Bash(cat)",
       "WebSearch",
-      "mcp__claude_ai_PubMed__search_articles"
+      "mcp__claude_ai_PubMed__search_articles",
+      "Read(//mnt/storage/open-cravat-reports/colo829-report/**)",
+      "Read(//mnt/storage/open-cravat-reports/pillar-reports/**)"
     ]
   }
 }
