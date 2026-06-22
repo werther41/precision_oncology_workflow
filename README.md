@@ -5,18 +5,18 @@ End-to-end tumor-normal somatic variant calling: FASTQ → BAM → VCF → annot
 ## Architecture
 
 ```
-┌──────────────┐     ┌─────────────────────┐     ┌──────────────┐     ┌──────────────┐
-│  Sequencer   │     │  Secondary Analysis │     │   Tertiary   │     │   Clinical   │
-│              │ ──> │                     │ ──> │              │ ──> │              │
-│   FASTQ      │     │   PARABRICKS GPU    │     │  Annotation  │     │   Report     │
-│  (paired R1  │     │  • fq2bam (BWA+BQSR)│     │  • VEP REST  │     │  • AMP tiers │
-│   + R2)      │     │  • Mutect2 somatic  │     │  • OncoKB    │     │  • JSON+text │
-│              │     │  • DeepSomatic somat│     │  • hotspot DB│     │  • EHR-ready │
-│              │     │  • DeepVariant germ.│     │              │     │              │
-└──────────────┘     └─────────────────────┘     └──────────────┘     └──────────────┘
-   ~200 GB             ~30 min on 2× RTX PRO       ~7 min VEP REST       ~1 min
-                                                    (5 workers, 43K vars)
-                       (vs ~30 hr CPU)
+┌──────────────┐   ┌───────────────────────┐   ┌────────────────────────┐   ┌─────────────────────┐
+│  Sequencer   │   │  GPU Variant Calling  │   │  Annotation            │   │  Clinical Reports   │
+│              │──>│  Parabricks 4.7       │──>│                        │──>│                     │
+│  FASTQ R1/R2 │   │  • fq2bam (BWA+BQSR) │   │  • Open CRAVAT 3.1     │   │  • PCGR HTML/XLSX   │
+│  tumor +     │   │  • DeepSomatic TN     │   │    CIViC, OncoKB       │   │  • AMP/ESMO tiers   │
+│  normal      │   │  • DeepVariant germ.  │   │  • PCGR 2.2.5 + VEP   │   │  • TMB estimate     │
+└──────────────┘   └───────────────────────┘   │    ClinVar, gnomAD     │   │  • EHR-ready JSON   │
+  ~200 GB/pair       ~50 min (RTX PRO 6000)     └────────────────────────┘   └─────────────────────┘
+                     (vs ~30 hr CPU)              ~10 min OC + PCGR           HTML + TSV + XLSX
+
+  run_pipeline.sh ─────────────────────────────────────────────────────────────────────────────────>
+  Entry point auto-detected: --tumor-r1/r2 → FQ2BAM | --tumor-bam → DeepSomatic | --vcf → OC+PCGR
 ```
 
 ## Sample Dataset
@@ -152,43 +152,41 @@ docker run --rm -v /mnt/storage:/mnt/storage realtimegenomics/rtg-tools:3.12.1 v
   --vcf-score-field INFO.TLOD --squash-ploidy
 ```
 
-### Step 4 (alternative caller): DeepSomatic tumor-normal calling
+### Step 4: Run via unified orchestrator
 
-DeepSomatic (Parabricks 4.7) is a deep-learning somatic caller that outperforms Mutect2 on
-HCC1395 without any post-processing filter cascade. It uses the matched normal for germline
-subtraction and emits `FILTER=GERMLINE` for non-somatic variants; only `FILTER=PASS` calls are
-somatic. Requires BAMs already produced by Step 3 (fq2bam).
+The `run_pipeline.sh` orchestrator chains all stages (FQ2BAM → DeepSomatic → Open CRAVAT → PCGR)
+with idempotent skip guards and auto-detected entry points. See the
+[Unified Pipeline Orchestrator](#unified-pipeline-orchestrator) section for full documentation.
 
 ```bash
-# Phases 1–4: call → PASS extract → VEP/OncoKB annotation → AMP-tiered report
-# All phases have skip-if-exists guards — safe to re-run from any stage.
-# DeepSomatic's FILTER column already suppresses FPs; VEP/OncoKB add interpretation only.
-TUMOR_TYPE=BRCA \
-./scripts/run_deepsomatic_pipeline.sh HCC1395 \
-  /mnt/storage/parabricks_test/output/HCC1395/HCC1395_tumor.bam \
-  /mnt/storage/parabricks_test/output/HCC1395/HCC1395_normal.bam
-# Writes (in deepsomatic/ subdir):
-#   HCC1395.deepsomatic.pass.vcf.gz            PASS-only somatic VCF
-#   HCC1395.deepsomatic.maf                    VEP + OncoKB annotated MAF
-#   HCC1395.deepsomatic_clinical_report.txt    AMP-tiered text report
-#   HCC1395.deepsomatic_clinical_report.json   EHR-ready JSON
+# ── Full pipeline from FASTQs ──────────────────────────────────────────────────────
+bash run_pipeline.sh HCC1395 \
+  --tumor-r1  /data/tumor_R1.fastq.gz \
+  --tumor-r2  /data/tumor_R2.fastq.gz \
+  --normal-r1 /data/normal_R1.fastq.gz \
+  --normal-r2 /data/normal_R2.fastq.gz \
+  --tumor-type BRCA
+# Runs: FQ2BAM → DeepSomatic → Open CRAVAT → PCGR
+# Stages that already have output are skipped automatically
 
-# Add --skip-annot to run Phases 0-2 only (calling + PASS extract, no annotation).
-# Set ONCOKB_TOKEN env var to use live OncoKB REST instead of built-in hotspot fallback.
+# ── From existing BAMs (HCC1395 validated case) ────────────────────────────────────
+bash run_pipeline.sh HCC1395 \
+  --tumor-bam  /mnt/storage/parabricks_test/output/HCC1395/HCC1395_tumor.bam \
+  --normal-bam /mnt/storage/parabricks_test/output/HCC1395/HCC1395_normal.bam \
+  --tumor-type BRCA
+# Runs: DeepSomatic → Open CRAVAT → PCGR
 
-# Benchmark against SEQC2 truth (separate step — HC BED is mandatory)
-# HC BED required — omitting it inflates FPs by ~93% (chrX + chr6 MHC + chr16 repeats)
+# ── Dry-run to preview commands ────────────────────────────────────────────────────
+bash run_pipeline.sh HCC1395 --tumor-bam ... --normal-bam ... --tumor-type BRCA --dry-run
+```
+
+Individual stage scripts (`run_deepsomatic_pipeline.sh`, `run_pcgr.sh`) still work standalone —
+the orchestrator calls them with the same interface.
+
+```bash
+# Benchmark DeepSomatic against SEQC2 truth (HC BED is mandatory — omitting it inflates FPs)
 ./scripts/eval_deepsomatic.sh HCC1395
-# Writes: /mnt/storage/parabricks_test/output/HCC1395/deepsomatic/eval/comparison.md
-
-# Optional: PCGR second-opinion report (deterministic, CIViC/ClinVar/OncoKB bundle)
-# Requires one-time data bundle download (~5 GB) and VEP cache (~30 GB) — see script header.
-PCGR_BUNDLE=/mnt/storage/pcgr_bundle \
-VEP_CACHE=/mnt/storage/vep_cache \
-TUMOR_TYPE=BRCA \
-./scripts/run_pcgr.sh HCC1395
-# Writes: deepsomatic/pcgr/HCC1395.pcgr.grch38.html  (HTML report)
-#         deepsomatic/pcgr/HCC1395.pcgr.grch38.snvs_indels.tiers.tsv  (tier TSV for diffing)
+# Writes: deepsomatic/eval/comparison.md
 ```
 
 > **⚠️ HC regions BED is mandatory for SEQC2 truth evaluation.** The truth VCF covers only
@@ -204,6 +202,203 @@ TUMOR_TYPE=BRCA \
 # 90 s end-to-end · Parabricks 4.7.0-1 · GPU 0 · TruSeq Amplicon panel data
 # Found: TP53 p.R248W (VAF 22%) + PIK3CA splice region
 ```
+
+## Unified Pipeline Orchestrator
+
+`run_pipeline.sh` + `pipeline.conf` chain all four stages into a single command with idempotent
+skip-if-exists guards, configurable entry points, and batch manifest support.
+
+### Prerequisites
+
+| Dependency | Location on this machine | One-time setup |
+|---|---|---|
+| Parabricks 4.7.0-1 | Docker — `nvcr.io/nvidia/clara/clara-parabricks:4.7.0-1` | `docker pull` |
+| Open CRAVAT 3.1.1 | `/mnt/storage/open-cravat-reports/oc-venv/bin/oc` | venv installed |
+| PCGR 2.2.5 | Docker — `sigven/pcgr:2.2.5` | `docker pull` |
+| PCGR reference bundle | `/mnt/storage/pcgr_bundle` (~5 GB) | `run_pcgr.sh --download-bundle` |
+| VEP cache (GRCh38) | `/mnt/storage/vep_cache` (~25 GB) | `run_pcgr.sh --download-cache` |
+| OncoKB API token | `pipeline.conf` → `ONCOKB_TOKEN=` | Register at oncokb.org |
+| GRCh38 reference | `/mnt/storage/parabricks_test/ref/` | `scripts/download_refs.sh` |
+
+All paths above are already set in `pipeline.conf`. Only `ONCOKB_TOKEN` requires a value.
+
+### Configuration (`pipeline.conf`)
+
+Edit `pipeline.conf` once per machine. All values can be overridden per-run via CLI flags or
+environment variables.
+
+```bash
+# ── References ──────────────────────────────────────────────────────
+REF_DIR=/mnt/storage/parabricks_test/ref
+REF_FASTA="${REF_DIR}/Homo_sapiens_assembly38.fasta"
+KNOWN_SITES="${REF_DIR}/Homo_sapiens_assembly38.known_indels.vcf.gz"
+GNOMAD_VCF="${REF_DIR}/af-only-gnomad.noalt.vcf.gz"
+PON_VCF="${REF_DIR}/1000g_pon.noalt.vcf.gz"
+
+# ── Annotation tools ─────────────────────────────────────────────────
+PCGR_BUNDLE=/mnt/storage/pcgr_bundle
+VEP_CACHE=/mnt/storage/vep_cache
+OC_BIN=/mnt/storage/open-cravat-reports/oc-venv/bin/oc
+ONCOKB_TOKEN=           # obtain at oncokb.org — do NOT commit with real value
+
+# ── GPU (GPU 1 is reserved for VLLM on this machine) ─────────────────
+NUM_GPUS=1
+GPU_DEVICE=0
+
+# ── Docker images (pinned) ───────────────────────────────────────────
+PARABRICKS_IMAGE=nvcr.io/nvidia/clara/clara-parabricks:4.7.0-1
+PCGR_IMAGE=sigven/pcgr:2.2.5
+
+# ── Pipeline defaults (all overridable via CLI) ───────────────────────
+OUTDIR=/mnt/storage/parabricks_test/output
+MODEL_TYPE=WGS          # WGS | WES | pacbio | ont
+TUMOR_TYPE=LUAD         # OncoTree code — override per sample
+TUMOR_PURITY=0.6        # 0.0–1.0, passed to PCGR
+PCGR_ASSAY=WGS          # WGS | WES | TARGETED
+WORKERS=5               # concurrent VEP REST workers
+OC_ANNOTATORS="civic oncokb"
+```
+
+### Single-Sample Usage
+
+#### Entry point: FASTQ (full pipeline from sequencer output)
+
+```bash
+bash run_pipeline.sh HCC1395 \
+  --tumor-r1  /data/tumor_R1.fastq.gz \
+  --tumor-r2  /data/tumor_R2.fastq.gz \
+  --normal-r1 /data/normal_R1.fastq.gz \
+  --normal-r2 /data/normal_R2.fastq.gz \
+  --tumor-type BRCA
+# Runs: FQ2BAM → DeepSomatic → Open CRAVAT → PCGR
+# Writes: ${OUTDIR}/HCC1395/  (see Output Layout below)
+```
+
+#### Entry point: existing BAMs (skip alignment)
+
+```bash
+bash run_pipeline.sh HCC1395 \
+  --tumor-bam  /mnt/storage/parabricks_test/output/HCC1395/HCC1395_tumor.bam \
+  --normal-bam /mnt/storage/parabricks_test/output/HCC1395/HCC1395_normal.bam \
+  --tumor-type BRCA
+# Auto-detects start from DeepSomatic
+# Runs: DeepSomatic → Open CRAVAT → PCGR
+```
+
+#### Entry point: existing PASS VCF (annotation only)
+
+```bash
+bash run_pipeline.sh HCC1395 \
+  --vcf /mnt/storage/parabricks_test/output/HCC1395/deepsomatic/HCC1395.deepsomatic.pass.vcf.gz \
+  --tumor-type BRCA
+# Auto-detects start from Open CRAVAT
+# Runs: Open CRAVAT → PCGR
+```
+
+#### Dry-run to preview what will run
+
+```bash
+bash run_pipeline.sh HCC1395 --tumor-bam ... --normal-bam ... --tumor-type BRCA --dry-run
+# Prints stage commands; executes nothing
+```
+
+### CLI Flags
+
+| Flag | Default | Description |
+|---|---|---|
+| `SAMPLE_ID` (positional) | — | Sample identifier; used in output filenames |
+| `--tumor-r1 FILE` | — | Tumor R1 FASTQ.gz |
+| `--tumor-r2 FILE` | — | Tumor R2 FASTQ.gz |
+| `--normal-r1 FILE` | — | Normal R1 FASTQ.gz |
+| `--normal-r2 FILE` | — | Normal R2 FASTQ.gz |
+| `--tumor-bam FILE` | — | Pre-aligned tumor BAM (skips FQ2BAM) |
+| `--normal-bam FILE` | — | Pre-aligned normal BAM |
+| `--vcf FILE` | — | Pre-called PASS VCF.gz (skips FQ2BAM + DeepSomatic) |
+| `--tumor-type CODE` | `LUAD` | OncoTree code (BRCA, LUAD, PAAD, …) |
+| `--tumor-purity FLOAT` | `0.6` | Estimated purity for PCGR |
+| `--outdir DIR` | from `pipeline.conf` | Base output directory |
+| `--config FILE` | `./pipeline.conf` | Config file path |
+| `--start-from STAGE` | auto-detect | `fq2bam` \| `deepsomatic` \| `opencravat` \| `pcgr` |
+| `--stop-after STAGE` | `pcgr` | Stop pipeline after this stage |
+| `--skip-oc` | off | Skip Open CRAVAT stage |
+| `--skip-pcgr` | off | Skip PCGR stage |
+| `--manifest FILE` | — | Run batch from TSV (see Batch Mode) |
+| `--dry-run` | off | Print commands; execute nothing |
+
+### Batch Mode (multiple samples)
+
+Create `samples.tsv` (9 tab-delimited columns; use `-` for unused fields):
+
+```
+sample_id  tumor_r1  tumor_r2  normal_r1  normal_r2  tumor_type  tumor_bam  normal_bam  vcf
+# From FASTQs:
+PT001      /data/PT001_R1.fq.gz  /data/PT001_R2.fq.gz  /data/PT001_N_R1.fq.gz  /data/PT001_N_R2.fq.gz  LUAD  -  -  -
+# From BAMs:
+HCC1395    -  -  -  -  BRCA  /mnt/storage/...HCC1395_tumor.bam  /mnt/storage/...HCC1395_normal.bam  -
+# Annotation only:
+PT003      -  -  -  -  PAAD  -  -  /data/pt003.pass.vcf.gz
+```
+
+Run the batch:
+```bash
+bash run_pipeline.sh --manifest samples.tsv --outdir /mnt/storage/results
+# Samples run sequentially (GPU is the bottleneck; parallelism not added)
+# Each sample logs to: ${OUTDIR}/${SAMPLE}/pipeline_run.log
+```
+
+### Output Layout
+
+```
+${OUTDIR}/${SAMPLE}/
+├── ${SAMPLE}_tumor.bam                           ← FQ2BAM sentinel
+├── ${SAMPLE}_normal.bam
+├── deepsomatic/
+│   ├── ${SAMPLE}.deepsomatic.pass.vcf.gz         ← DeepSomatic sentinel
+│   ├── ${SAMPLE}.deepsomatic.maf                 VEP + OncoKB annotated MAF
+│   ├── ${SAMPLE}.deepsomatic_clinical_report.txt AMP-tiered text
+│   ├── ${SAMPLE}.deepsomatic_clinical_report.json EHR-ready JSON
+│   └── pcgr/
+│       ├── ${SAMPLE}.pcgr.grch38.html            ← PCGR sentinel (16 MB)
+│       ├── ${SAMPLE}.pcgr.grch38.snv_indel_ann.tsv.gz   full annotation TSV
+│       ├── ${SAMPLE}.pcgr.grch38.tmb.tsv         TMB metrics (missense, coding)
+│       ├── ${SAMPLE}.pcgr.grch38.xlsx            Excel summary
+│       └── ${SAMPLE}.pcgr_input.vcf.gz           preprocessed VCF (TDP/TVAF lifted)
+├── opencravat/
+│   ├── ${SAMPLE}-oc-report.tsv                   ← OC sentinel
+│   └── ${SAMPLE}-oc-report.sqlite                full Open CRAVAT DB
+└── pipeline_run.log                              per-sample combined log
+```
+
+Sentinel files are checked at stage entry. Any stage whose sentinel already exists is skipped
+automatically — safe to re-run after a partial failure or to add new stages to existing results.
+
+### PCGR VCF Preprocessing Note
+
+DeepSomatic emits depth and allele fraction as **FORMAT** fields (`FORMAT/DP`, `FORMAT/VAF`).
+PCGR 2.2.5 requires them as **INFO** fields and rejects the reserved name `DP` for a custom INFO
+tag. The pipeline automatically runs a preprocessing step inside the PCGR Docker container that:
+
+1. Lifts `FORMAT/DP` → `INFO/TDP` and `FORMAT/VAF` → `INFO/TVAF`
+2. Writes the result as `${SAMPLE}.pcgr_input.vcf.gz`
+3. Passes `--tumor_dp_tag TDP --tumor_af_tag TVAF` to PCGR
+
+This is handled by `scripts/vcf_add_info_dp_vaf.awk` and is transparent to the caller —
+`run_pipeline.sh` invokes `run_pcgr.sh` which performs the lift automatically.
+
+### HCC1395 Validated Results (Annotation Stages)
+
+The full FASTQ→BAM→VCF pipeline was run to completion; annotation stages were validated
+against the SEQC2 truth call set:
+
+| Stage | Tool | Findings |
+|---|---|---|
+| Open CRAVAT | CIViC | TP53 p.R175H — confirmed oncogenic, lung/breast evidence |
+| Open CRAVAT | OncoKB | Requires valid `ONCOKB_TOKEN` for full results |
+| PCGR | ClinVar/gnomAD/COSMIC | TP53 p.R175H Tier 1 (ClinVar Pathogenic) |
+| PCGR | BRCA2 frameshift | Tier IA (tumor suppressor LoF rule — AMP/ESMO) |
+| PCGR | TMB | 13.8 mut/Mb (missense only), 15.5 mut/Mb (coding non-silent) |
+
+---
 
 ## HCC1395 Validated Run Results (Jun 2026, Parabricks 4.7.0-1)
 
@@ -657,9 +852,16 @@ Compare to ~$50–80/sample on CPU instances running 24+ hours.
 ```
 .
 ├── README.md                              # this file
+├── pipeline.conf                          # machine-level config (paths, GPU, Docker tags)
+├── run_pipeline.sh                        # unified 4-stage orchestrator (FQ2BAM→DS→OC→PCGR)
+├── samples.tsv                            # batch manifest template (9-column TSV)
+├── nextflow.config                        # Nextflow config skeleton (future HPC/cloud migration)
 ├── scripts/
-│   ├── run_parabricks_pipeline.sh         # full GPU pipeline (FASTQ → filtered VCF, Mutect2)
-│   ├── run_deepsomatic_pipeline.sh        # DeepSomatic tumor-normal calling (phases 0–2)
+│   ├── run_parabricks_pipeline.sh         # GPU pipeline: FASTQ → BAM → Mutect2 VCF
+│   ├── run_deepsomatic_pipeline.sh        # DeepSomatic TN calling + VEP/OncoKB annotation
+│   ├── run_pcgr.sh                        # PCGR 2.2.5 second-opinion report (Docker)
+│   ├── run_integration_test.sh            # OC + PCGR integration test for HCC1395
+│   ├── vcf_add_info_dp_vaf.awk            # FORMAT/DP,VAF → INFO/TDP,TVAF lift (PCGR prereq)
 │   ├── eval_deepsomatic.sh               # vcfeval benchmark for DeepSomatic (phase 3)
 │   ├── diagnose_deepsomatic.sh           # root-cause checker for low-precision results
 │   ├── annotate_variants.sh               # VEP local-cache + OncoKB docker (offline mode)

@@ -34,8 +34,8 @@ TUMOR_R2="${3:-sample_data/tumor_R2.fastq.gz}"
 NORMAL_R1="${4:-sample_data/normal_R1.fastq.gz}"
 NORMAL_R2="${5:-sample_data/normal_R2.fastq.gz}"
 
-NUM_GPUS="${NUM_GPUS:-2}"          # 2x RTX PRO 6000 available on this machine
-GPU_DEVICE="${GPU_DEVICE:-all}"    # expose all GPUs; use "0" or "0,1" to restrict
+NUM_GPUS="${NUM_GPUS:-1}"
+GPU_DEVICE="${GPU_DEVICE:-0}"      # use "0,1" for 2-GPU runs
 
 # Reference data (GRCh38 no-alt build, 455 sequences)
 REF_DIR="${REF_DIR:-/mnt/storage/parabricks_test/ref}"
@@ -64,7 +64,7 @@ TUMOR_SEGMENTS="${OUTDIR}/${SAMPLE_ID}_tumor_segments.table"
 
 # Parabricks container
 PB_IMAGE="nvcr.io/nvidia/clara/clara-parabricks:4.7.0-1"
-DOCKER_RUN="docker run --gpus \"${GPU_DEVICE}\" --rm \
+DOCKER_RUN="docker run --gpus \"device=${GPU_DEVICE}\" --rm \
   --user $(id -u):$(id -g) \
   -v /etc/passwd:/etc/passwd:ro -v /etc/group:/etc/group:ro \
   -v /mnt/storage:/mnt/storage \

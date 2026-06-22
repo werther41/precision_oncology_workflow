@@ -1,0 +1,23 @@
+# Precision Oncology Pipeline — Sample Manifest
+# Usage: bash run_pipeline.sh --manifest samples.tsv [--outdir /results]
+#
+# Columns (tab-separated):
+#   sample_id   - unique sample identifier
+#   tumor_r1    - tumor R1 FASTQ.gz path  (use - to skip FQ2BAM)
+#   tumor_r2    - tumor R2 FASTQ.gz path  (use - to skip FQ2BAM)
+#   normal_r1   - normal R1 FASTQ.gz path (use - to skip FQ2BAM)
+#   normal_r2   - normal R2 FASTQ.gz path (use - to skip FQ2BAM)
+#   tumor_type  - OncoTree code (BRCA, LUAD, PAAD, etc.) or - for default
+#   tumor_bam   - pre-aligned tumor BAM   (use - if starting from FASTQs)
+#   normal_bam  - pre-aligned normal BAM  (use - if starting from FASTQs)
+#   vcf         - pre-called PASS VCF     (use - to run calling stages)
+#
+# Lines beginning with # are ignored.
+#
+sample_id	tumor_r1	tumor_r2	normal_r1	normal_r2	tumor_type	tumor_bam	normal_bam	vcf
+# Example: full pipeline from FASTQs
+# PATIENT001	/data/tumor_R1.fastq.gz	/data/tumor_R2.fastq.gz	/data/normal_R1.fastq.gz	/data/normal_R2.fastq.gz	LUAD	-	-	-
+# Example: start from existing BAMs
+# HCC1395	-	-	-	-	BRCA	/mnt/storage/parabricks_test/output/HCC1395/HCC1395_tumor.bam	/mnt/storage/parabricks_test/output/HCC1395/HCC1395_normal.bam	-
+# Example: annotate a pre-called VCF only
+# PATIENT003	-	-	-	-	PAAD	-	-	/data/patient003.pass.vcf.gz
